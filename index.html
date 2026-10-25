@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta name="msvalidate.01" content="7E19F1B84F109A3EDFC6C2FA127D031F" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>School Life 3D</title>
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background: #a9d8ff;
+    color: white;
+  }
+  #game { width: 100vw; height: 100vh; display: block; }
+  #hud {
+    position: fixed;
+    top: 14px;
+    left: 14px;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .panel {
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: #142638dd;
+    border: 1px solid #ffffff50;
+    box-shadow: 0 3px 12px #0003;
+  }
+  #message {
+    position: fixed;
+    z-index: 2;
+    bottom: 105px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #142638e8;
+    padding: 12px 18px;
+    border-radius: 12px;
+    text-align: center;
+    width: max-content;
+    max-width: 90vw;
+  }
+  #help {
+    position: fixed;
+    z-index: 2;
+    left: 14px;
+    bottom: 14px;
+    max-width: 300px;
+    line-height: 1.6;
+    font-size: 13px;
+  }
+  #buttons {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    display: flex;
+    gap: 8px;
+    z-index: 3;
+  }
+  button {
+    border: 0;
+    border-radius: 10px;
+    padding: 12px;
+    cursor: pointer;
+    font-weight: bold;
+    background: #fff;
+    color: #183047;
+  }
+  button:active { transform: scale(.96); }
+</style>
+</head>
+
+<body>
+<div id="hud">
+  <div class="panel">🏫 School Life 3D</div>
+  <div class="panel">🪙 Coins: <span id="coins">0</span></div>
+  <div class="panel">⭐ Level: <span id="level">1</span></div>
+</div>
+
+<div id="message">Welcome to school! Explore and collect the coins.</div>
+
+<div id="help" class="panel">
+  <b>CONTROLS</b><br>
+  W A S D — Move<br>
+  Arrow keys — Move<br>
+  Mouse — Look around<br>
+  E — Enter a nearby area<br>
+  Collect gold coins. Avoid the red students!
+</div>
+
+<div id="buttons">
+  <button id="soundButton">🔊 Sound ON</button>
+  <button id="resetButton">↻ New Game</button>
+</div>
+
+<script type="module">
+import * as THREE from
+  'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
+
+// ---------- BASIC GAME SETUP ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9bd6ff);
+scene.fog = new THREE.Fog(0x9bd6ff, 35, 100);
+
+const camera = new THREE.PerspectiveCamera(
+  65, window.innerWidth / window.innerHeight, 0.1, 200
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+
+// ---------- LIGHTS ----------
+scene.add(new THREE.HemisphereLight(0xffffff, 0x657b43, 2));
+
+const sunlight = new THREE.DirectionalLight(0xffffff, 3);
+sunlight.position.set(-15, 25, 10);
+sunlight.castShadow = true;
+sunlight.shadow.mapSize.set(1024, 1024);
+scene.add(sunlight);
+
+// ---------- MATERIALS ----------
+function material(color, extra = {}) {
+  return new THREE.MeshStandardMaterial({ color, ...extra });
+}
+
+const grassMat = material(0x68b85a);
+const pathMat = material(0xd9c7a0);
+const wallMat = material(0xf1d9ad);
+const roofMat = material(0x9b5146);
+const whiteMat = material(0xffffff);
+const blueMat = material(0x2478d0);
+const darkMat = material(0x24364a);
+const goldMat = material(0xffc928, {
+  metalness: 0.55,
+  roughness: 0.28
+});
+
+// ---------- HELPER TO CREATE OBJECTS ----------
+function block(name, x, y, z, w, h, d, mat, cast = true) {
+  const obj = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d), mat
+  );
+  obj.name = name;
+  obj.position.set(x, y, z);
+  obj.castShadow = cast;
+  obj.receiveShadow = true;
+  scene.add(obj);
+  return obj;
+}
+
+// ---------- SCHOOL GROUNDS ----------
+block("grass", 0, -0.35, 0, 90, 0.5, 90, grassMat, false);
+
+// A long walkway through the campus
+block("main path", 0, -0.075, 8, 7, 0.08, 65, pathMat, false);
+block("cross path", 0, -0.065, -12, 46, 0.09, 5, pathMat, false);
+
+// ---------- SCHOOL BUILDINGS ----------
+function makeBuilding(name, x, z, w, d, color, labelColor) {
+  const building = new THREE.Group();
+  building.position.set(x, 0, z);
+  scene.add(building);
+
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(w, 5, d), material(color)
+  );
+  body.position.y = 2.5;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  building.add(body);
+
+  const roof = new THREE.Mesh(
+    new THREE.BoxGeometry(w + 0.8, 0.45, d + 0.8),
+    material(0x984e42)
+  );
+  roof.position.y = 5.15;
+  roof.castShadow = true;
+  building.add(roof);
+
+  // Front windows
+  for (let wx = -w / 2 + 1.3; wx < w / 2 - 0.5; wx += 2.4) {
+    const windowMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 1.25, 0.12),
+      material(0x77c9f4, { metalness: 0.15, roughness: 0.2 })
+    );
+    windowMesh.position.set(wx, 3.1, d / 2 + 0.07);
+    building.add(windowMesh);
+  }
+
+  const door = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 2.4, 0.16),
+    material(0x69402e)
+  );
+  door.position.set(0, 1.2, d / 2 + 0.1);
+  building.add(door);
+
+  const sign = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.min(w - 1, 8), 0.8, 0.2),
+    material(labelColor)
+  );
+  sign.position.set(0, 4.35, d / 2 + 0.18);
+  building.add(sign);
+
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 512;
+  labelCanvas.height = 128;
+  const ctx = labelCanvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 42px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(name.toUpperCase(), 256, 64);
+
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  const textMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(Math.min(w - 1, 8), 0.8),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+  );
+  textMesh.position.set(0, 4.35, d / 2 + 0.3);
+  building.add(textMesh);
+
+  return building;
+}
+
+makeBuilding("Classrooms", -12, -15, 15, 9, 0xf0d8aa, 0x234d83);
+makeBuilding("Library", 12, -15, 12, 9, 0xe6c7f0, 0x67418b);
+makeBuilding("Main Office", 0, -29, 17, 8, 0xffe7c1, 0x276b55);
+
+// ---------- TREES ----------
+function makeTree(x, z) {
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.32, 1.7, 8),
+    material(0x79502c)
+  );
+  trunk.position.set(x, 0.5, z);
+  trunk.castShadow = true;
+  scene.add(trunk);
+
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(1.15, 10, 8),
+    material(0x23884b)
+  );
+  leaves.position.set(x, 1.9, z);
+  leaves.scale.y = 1.15;
+  leaves.castShadow = true;
+  scene.add(leaves);
+}
+
+for (let i = -4; i <= 4; i++) {
+  makeTree(i * 7, 24);
+  makeTree(i * 7, -36);
+}
+for (let z = -20; z <= 20; z += 10) {
+  makeTree(-28, z);
+  makeTree(28, z);
+}
+
+// ---------- PLAYER ----------
+const player = new THREE.Group();
+scene.add(player);
+
+const body = new THREE.Mesh(
+  new THREE.BoxGeometry(0.8, 1.15, 0.45), blueMat
+);
+body.position.y = 1.1;
+body.castShadow = true;
+player.add(body);
+
+const head = new THREE.Mesh(
+  new THREE.SphereGeometry(0.36, 16, 12), material(0x9b6544)
+);
+head.position.y = 1.95;
+head.castShadow = true;
+player.add(head);
+
+const hair = new THREE.Mesh(
+  new THREE.SphereGeometry(0.37, 16, 12),
+  material(0x211b18)
+);
+hair.position.set(0, 2.13, -0.04);
+hair.scale.set(1, 0.6, 1);
+player.add(hair);
+
+const leftLeg = block("left leg", 0, 0, 0, 0.28, 0.75, 0.32, darkMat);
+const rightLeg = block("right leg", 0, 0, 0, 0.28, 0.75, 0.32, darkMat);
+player.add(leftLeg);
+player.add(rightLeg);
+scene.remove(leftLeg);
+scene.remove(rightLeg);
+
+player.position.set(0, 0, 15);
+
+// ---------- COINS ----------
+const coins = [];
+function makeCoin(x, z) {
+  const coin = new THREE.Mesh(
+    new THREE.TorusGeometry(0.42, 0.14, 8, 16),
+    goldMat
+  );
+  coin.position.set(x, 1.1, z);
+  coin.castShadow = true;
+  scene.add(coin);
+  coins.push(coin);
+}
+
+[
+  [-4, 12], [4, 9], [-7, 3], [7, 1],
+  [-3, -5], [5, -8], [-18, -4], [18, -5],
+  [-8, -23], [8, -23], [0, -10], [0, 20]
+].forEach(([x, z]) => makeCoin(x, z));
+
+// ---------- ENEMIES ----------
+const enemies = [];
+
+function makeEnemy(x, z, offset) {
+  const enemy = new THREE.Group();
+  enemy.position.set(x, 0, z);
+
+  const enemyBody = new THREE.Mesh(
+    new THREE.BoxGeometry(0.85, 1.15, 0.5),
+    material(0xd94b52)
+  );
+  enemyBody.position.y = 1.1;
+  enemyBody.castShadow = true;
+  enemy.add(enemyBody);
+
+  const enemyHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 12, 10),
+    material(0xb97f5d)
+  );
+  enemyHead.position.y = 1.95;
+  enemy.add(enemyHead);
+
+  scene.add(enemy);
+  enemies.push({ mesh: enemy, x, z, offset });
+}
+
+makeEnemy(-9, 3, 0);
+makeEnemy(10, -3, 2);
+makeEnemy(18, 8, 4);
+
+// ---------- SAVE DATA ----------
+let saved = {};
+try {
+  saved = JSON.parse(localStorage.getItem("schoolLife3D") || "{}") || {};
+} catch {
+  saved = {};
+}
+
+let coinCount = Number.isFinite(saved.coins) ? saved.coins : 0;
+let collected = Array.isArray(saved.collected) ? saved.collected : [];
+let level = Number.isFinite(saved.level) ? saved.level : 1;
+let soundOn = true;
+
+coins.forEach((coin, i) => {
+  if (collected.includes(i)) coin.visible = false;
+});
+
+const coinText = document.getElementById("coins");
+const levelText = document.getElementById("level");
+const message = document.getElementById("message");
+
+function updateHUD() {
+  coinText.textContent = coinCount;
+  levelText.textContent = level;
+}
+
+function saveGame() {
+  try {
+    localStorage.setItem("schoolLife3D", JSON.stringify({
+      coins: coinCount,
+      collected,
+      level
+    }));
+  } catch {
+    // The game can still run if saving is unavailable.
+  }
+}
+
+updateHUD();
+
+// ---------- SOUND EFFECTS ----------
+let audioContext;
+
+function beep(frequency = 600, duration = 0.12) {
+  if (!soundOn) return;
+
+  try {
+    audioContext ??= new AudioContext();
+    if (audioContext.state === "suspended") audioContext.resume();
+
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+
+    oscillator.frequency.value = frequency;
+    oscillator.type = "sine";
+    gain.gain.setValueAtTime(0.08, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(
+      0.001, audioContext.currentTime + duration
+    );
+
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + duration);
+  } catch {
+    // Sound is optional.
+  }
+}
+
+document.getElementById("soundButton").onclick = () => {
+  soundOn = !soundOn;
+  document.getElementById("soundButton").textContent =
+    soundOn ? "🔊 Sound ON" : "🔇 Sound OFF";
+  if (soundOn) beep(700);
+};
+
+document.getElementById("resetButton").onclick = () => {
+  if (!confirm("Start a new game? Your saved coins and progress will reset.")) {
+    return;
+  }
+
+  coinCount = 0;
+  collected = [];
+  level = 1;
+  player.position.set(0, 0, 15);
+  coins.forEach(coin => coin.visible = true);
+  saveGame();
+  updateHUD();
+  message.textContent = "New game started! Collect those coins!";
+};
+
+// ---------- CONTROLS ----------
+const keys = {};
+window.addEventListener("keydown", e => {
+  const key = e.key.toLowerCase();
+  if (["w", "a", "s", "d", "arrowup", "arrowdown",
+       "arrowleft", "arrowright", " "].includes(key)) {
+    e.preventDefault();
+  }
+  keys[key] = true;
+
+  if (key === "e") enterArea();
+});
+
+window.addEventListener("keyup", e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+let cameraAngle = 0;
+let cameraDistance = 8;
+
+renderer.domElement.addEventListener("click", () => {
+  renderer.domElement.focus();
+});
+
+renderer.domElement.addEventListener("mousemove", e => {
+  if (e.buttons === 1) cameraAngle -= e.movementX * 0.004;
+});
+
+// ---------- SCHOOL AREAS ----------
+const areas = [
+  { name: "Classrooms", x: -12, z: -15, radius: 7 },
+  { name: "Library", x: 12, z: -15, radius: 7 },
+  { name: "Main Office", x: 0, z: -29, radius: 8 }
+];
+
+function enterArea() {
+  const area = areas.find(a =>
+    Math.hypot(player.position.x - a.x, player.position.z - a.z)
+      < a.radius
+  );
+
+  if (area) {
+    message.textContent = "You visited the " + area.name + "!";
+    beep(780);
+    level = Math.min(10, level + 1);
+    updateHUD();
+    saveGame();
+  } else {
+    message.textContent = "Move closer to a school building first!";
+  }
+}
+
+// ---------- MAIN GAME LOOP ----------
+const clock = new THREE.Clock();
+let messageTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+
+  let moveX = 0;
+  let moveZ = 0;
+
+  if (keys["w"] || keys["arrowup"]) moveZ -= 1;
+  if (keys["s"] || keys["arrowdown"]) moveZ += 1;
+  if (keys["a"] || keys["arrowleft"]) moveX -= 1;
+  if (keys["d"] || keys["arrowright"]) moveX += 1;
+
+  if (moveX || moveZ) {
+    const length = Math.hypot(moveX, moveZ);
+    moveX /= length;
+    moveZ /= length;
+
+    player.position.x += moveX * 7 * dt;
+    player.position.z += moveZ * 7 * dt;
+    player.rotation.y = Math.atan2(moveX, moveZ);
+
+    // Keep the player inside the campus.
+    player.position.x = THREE.MathUtils.clamp(
+      player.position.x, -40, 40
+    );
+    player.position.z = THREE.MathUtils.clamp(
+      player.position.z, -40, 40
+    );
+
+    body.position.y = 1.1 + Math.sin(time * 12) * 0.04;
+  }
+
+  // Coins spin and bob. Collect them by walking close.
+  coins.forEach((coin, i) => {
+    if (!coin.visible) return;
+
+    coin.rotation.y += dt * 2.5;
+    coin.position.y = 1.1 + Math.sin(time * 3 + i) * 0.12;
+
+    if (coin.position.distanceTo(
+      new THREE.Vector3(player.position.x, 1.1, player.position.z)
+    ) < 1.15) {
+      coin.visible = false;
+      collected.push(i);
+      coinCount += 1;
+      updateHUD();
+      saveGame();
+      beep(850, 0.18);
+      message.textContent = "+1 coin! Great job!";
+      messageTimer = 2;
+
+      if (collected.length === coins.length) {
+        level = Math.min(10, level + 1);
+        updateHUD();
+        saveGame();
+        message.textContent = "Amazing! All campus coins collected!";
+      }
+    }
+  });
+
+  // Enemies patrol small areas. Touching one costs a coin.
+  enemies.forEach((enemy, i) => {
+    const patrolX = enemy.x + Math.sin(time * 0.8 + enemy.offset) * 3;
+    const patrolZ = enemy.z + Math.cos(time * 0.7 + enemy.offset) * 2;
+
+    enemy.mesh.position.x = patrolX;
+    enemy.mesh.position.z = patrolZ;
+    enemy.mesh.rotation.y = Math.sin(time + i) * 0.3;
+
+    const distance = Math.hypot(
+      player.position.x - patrolX,
+      player.position.z - patrolZ
+    );
+
+    if (distance < 1.15 && !enemy.cooldown) {
+      coinCount = Math.max(0, coinCount - 1);
+      enemy.cooldown = true;
+      updateHUD();
+      saveGame();
+      message.textContent = "An enemy caught you! Watch out!";
+      messageTimer = 2;
+      beep(180, 0.25);
+
+      setTimeout(() => enemy.cooldown = false, 1800);
+    }
+  });
+
+  if (messageTimer > 0) {
+    messageTimer -= dt;
+    if (messageTimer <= 0) {
+      message.textContent = "Explore the school and collect coins!";
+    }
+  }
+
+  // Third-person camera follows the player.
+  const desiredCamera = new THREE.Vector3(
+    player.position.x + Math.sin(cameraAngle) * cameraDistance,
+    player.position.y + 6,
+    player.position.z + Math.cos(cameraAngle) * cameraDistance
+  );
+
+  camera.position.lerp(desiredCamera, 0.09);
+  camera.lookAt(
+    player.position.x,
+    player.position.y + 1.2,
+    player.position.z
+  );
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ---------- RESIZE ----------
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
